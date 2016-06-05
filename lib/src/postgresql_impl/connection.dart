@@ -37,6 +37,7 @@ class ConnectionImpl implements Connection {
   bool _hasConnected = false;
   final Completer _connected = new Completer();
   final Queue<_Query> _sendQueryQueue = new Queue<_Query>();
+  final Map<String, StreamController<String>> _channelControllers = new Map<String, StreamController<String>>();
   _Query _query;
   int _msgType;
   int _msgLength;
@@ -399,6 +400,8 @@ class ConnectionImpl implements Connection {
       case _MSG_EMPTY_QUERY_REPONSE: assert(length == 0); break;
       case _MSG_COMMAND_COMPLETE: _readCommandComplete(msgType, length); break;
 
+      case _MSG_NOTIFICATION_RESPONSE: _readNotification(msgType, length); break;
+
       default:
         throw new PostgresqlException('Unknown, or unimplemented message: '
             '${UTF8.decode([msgType])}.', _getDebugName());
@@ -406,6 +409,20 @@ class ConnectionImpl implements Connection {
 
     if (pos + length != _buffer.bytesRead)
       throw new PostgresqlException('Lost message sync.', _getDebugName());
+  }
+
+  void _readNotification(int msgType, int length) {
+    assert(_buffer.bytesAvailable >= length);
+
+    var pid = _buffer.readInt32(); // Unused for now
+    var channel = _buffer.readUtf8String(length);
+    var payload = _buffer.readUtf8String(length);
+
+    var controller = _channelControllers[channel];
+
+    if (controller != null) {
+      controller.add(payload);
+    }
   }
 
   void _readErrorOrNoticeResponse(int msgType, int length) {
@@ -687,4 +704,24 @@ class ConnectionImpl implements Connection {
     new Future(() => _messages.close());
   }
 
+  @override
+  Stream<String> listen(String channel) {
+    var controller = _channelControllers[channel];
+
+    if (controller == null) {
+      controller = _channelControllers[channel] = new StreamController<String>(
+        onListen: () async {
+          await execute('LISTEN $channel');
+        },
+        onCancel: () async {
+          if (state != ConnectionState.closed) {
+            // Only cleanup if the user hasn't already closed the connection
+            await execute('UNLISTEN $channel');
+          }
+          _channelControllers.remove(channel);
+        });
+    }
+
+    return controller.stream;
+  }
 }

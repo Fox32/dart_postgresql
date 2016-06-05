@@ -84,6 +84,11 @@ class ConnectionDecorator implements pg.Connection {
 
   @override
   String toString() => "$_pconn";
+
+  @override
+  Stream<String> listen(String channel) {
+    throw new UnsupportedError('LISTEN isn\'t supported for pool connections');
+  }
 }
 
 

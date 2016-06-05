@@ -138,6 +138,10 @@ class MockConnection implements pg.Connection {
   Future runInTransaction(Future operation(), [pg.Isolation isolation])
     => throw new UnimplementedError();
 
+  @override
+  Stream<String> listen(String channel) {
+    throw new UnimplementedError();
+  }
 }
 
 
